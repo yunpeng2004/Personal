@@ -1,39 +1,92 @@
-# WKSPB-v2 (Region-KAN only)
+# CDVLM: Cross-Domain Vision-Language Model
 
-这版是按“只把改进型 KAN 精确放到 Region 生长上”的思路整理的完整代码。
+**Paper**: Multimodal Vision-Language Models for Cross-Domain Visual Understanding
 
-## 你需要的目录
-把数据按下面放：
+## Architecture
 
-```text
-wkspb_v2/
-├── images/
-├── masks/
-├── main.py
-└── ...
+```
+Image → [ViT-B/16] → visual_features → [DIFA] → aligned_visual ─┐
+                                                                  ├→ [Contrastive Loss]
+Text  → [BERT]     → text_features    → [DIFA] → aligned_text   ─┘
+                                                                  ├→ [Classification Head]
+                                                                  └→ [Cross-Domain Contrastive]
 ```
 
-## 安装
+## Loss Function
+
+**L = L_clip + λ₁ · L_align + λ₂ · L_cd + L_cls**
+
+- `L_clip`: CLIP-style vision-text contrastive loss
+- `L_align`: Domain-invariant feature alignment (MMD + adversarial)
+- `L_cd`: Cross-domain contrastive learning
+- `L_cls`: Classification loss
+
+## Datasets
+
+- **Natural**: MS-COCO
+- **Driving**: Cityscapes
+- **Medical**: ChestX-ray14
+
+## Project Structure
+
+```
+cdvlm/
+├── config.py               # Configuration
+├── models/
+│   ├── __init__.py
+│   ├── vision_encoder.py   # ViT-B/16 implementation
+│   ├── text_encoder.py     # BERT text encoder
+│   ├── difa_module.py      # Domain-Invariant Feature Alignment
+│   ├── contrastive_loss.py # Cross-domain contrastive learning
+│   └── cdvlm.py            # Main model (CDVLM)
+├── data/
+│   ├── __init__.py
+│   └── dataset.py          # Datasets, transforms, samplers
+├── utils/
+│   ├── __init__.py
+│   └── trainer.py          # Training loop, EMA, scheduler
+├── train.py                # Main training script
+├── evaluate.py             # Evaluation script
+├── transfer_experiment.py  # Domain transfer experiments
+├── baselines.py            # CLIP, DANN, MMD baselines
+├── evaluator.py            # Evaluation utilities
+├── visualization.py        # Plotting utilities
+└── requirements.txt
+```
+
+## Quick Start
+
 ```bash
+# Install dependencies
 pip install -r requirements.txt
+
+# Train
+python train.py --epochs 30 --batch_size 256 --lr 1e-4
+
+# Debug mode (fast test)
+python train.py --debug --epochs 2
+
+# Evaluate
+python evaluate.py --checkpoint checkpoints/best_model.pt --visualize
+
+# Domain transfer experiments
+python transfer_experiment.py --checkpoint checkpoints/best_model.pt
 ```
 
-## 运行
-```bash
-python main.py
-```
+## Hyperparameters
 
-## 这版的核心变化
-1. Encoder 改成 ResNet34
-2. SPB 保留 Wavelet + Region-KAN
-3. GDU 改成 Lite 版：只有 Region 分支用 KAN
-4. Boundary / Confidence 改回轻量卷积
-5. 训练仍然是 early stopping
-6. 训练结束后自动在 val 上搜索最佳 threshold，再拿这个 threshold 去测 test
-
-## 为什么这么改
-不是删掉 KAN 创新，而是把 KAN 集中放在“最需要高阶状态映射”的地方：
-- SPB 的高置信核心初始化
-- GDU 的 Region 生长更新
-
-这样比“所有分支都重 KAN”更稳，也更容易把 Dice 提上去。
+| Parameter | Value |
+|-----------|-------|
+| Vision Encoder | ViT-B/16 |
+| Text Encoder | BERT-base |
+| Embedding Dim | 256 |
+| Batch Size | 256 |
+| Learning Rate | 1e-4 |
+| Epochs | 30 |
+| Optimizer | AdamW |
+| Scheduler | Cosine |
+| λ₁ (align) | 0.5 |
+| λ₂ (contrastive) | 3.0 |
+| Temperature | 0.07 |
+| Warmup Steps | 1000 |
+| Gradient Clip | 1.0 |
